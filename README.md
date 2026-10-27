@@ -7,6 +7,8 @@
 - 检索：中文 bigram 分词 + BM25，零外部依赖（DeepSeek 官方没有 embedding 接口，所以走关键词检索这条路更稳）
 
 > 要放到服务器上公网使用？看 **[deploy/DEPLOY.md](deploy/DEPLOY.md)**：systemd + nginx + HTTPS + 备份，一步步照着做就行。
+>
+> 部署好之后日常更新只需要一条命令：服务器上执行 `./ops.sh`（拉代码 → 编译 → 停服 → 换包 → 启动 → 健康检查，失败自动回滚）。脚本见 **[deploy/ops.sh](deploy/ops.sh)**，用法看 DEPLOY.md 第 8 节。
 
 ---
 

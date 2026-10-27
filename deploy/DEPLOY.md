@@ -213,7 +213,79 @@ ufw enable
 
 ---
 
-## 8. 更新版本
+## 8. 日常更新
+
+### 8.1 用运维脚本（推荐）
+
+服务器项目目录下有 `ops.sh`，一条命令完成 **拉代码 → 编译 → 停服 → 换包 → 启动 → 健康检查**，失败自动回滚。
+
+```bash
+# 在服务器上
+cd /data/AI/agent-hub
+./ops.sh                # 拉最新代码并部署（代码没变化会跳过，不动服务）
+
+# 在开发机上一条命令搞定（不用登录服务器）
+ssh root@<server> '/data/AI/agent-hub/ops.sh'
+```
+
+| 命令 | 作用 |
+| --- | --- |
+| `./ops.sh` | 拉代码 + 编译 + 部署 + 健康检查（无变化则跳过） |
+| `./ops.sh deploy --force` | 强制重建并重启（改了配置、想重来一遍时用） |
+| `./ops.sh deploy --no-pull` | 不拉代码，用现有源码重建（网络不通 / 应急） |
+| `./ops.sh code` | 只拉代码 |
+| `./ops.sh build` | 只编译，不动线上 |
+| `./ops.sh restart` | 只重启服务 |
+| `./ops.sh rollback` | 回滚到上一个包（可来回切） |
+| `./ops.sh check` | 只做健康检查 |
+| `./ops.sh status` | 版本 / 进程 / 内存 / 数据量一览 |
+| `./ops.sh logs` | 跟踪实时日志 |
+| `./ops.sh backup` | 立即备份一次数据库 |
+| `./ops.sh self-update` | 更新脚本自身（仓库里 `deploy/ops.sh` 有新版时） |
+
+脚本内部流程：
+
+1. `git fetch` 拉取（老版 git 与 GitHub 握手偶发失败，自动重试 4 次，仍失败则退回 tarball 下载）
+2. 对比 commit，无变化直接退出（不动线上）
+3. **先停服**（2G 内存的机器，编译时不能和 MySQL 抢内存）→ `mvn clean package`
+4. 编译失败 → 立刻把原服务启回来，线上不受影响
+5. 编译成功 → 备份当前包为 `agent-hub.jar.prev`（另在 `backup/jar/` 留 5 个历史包）→ 换包
+6. 启动 → 10 项健康检查（端口 / 进程 / 鉴权 401 / 静态资源 / 模型 Key / 数据库 / 80 端口入口 / 日志异常 / 开机自启）
+7. 健康检查不通过 → 自动回滚到上一版并重启
+
+退出码：`0` 成功，`1` 失败（已自动恢复）。可以放进 CI 或定时任务里判断。
+
+### 8.2 服务器上的编译环境（首次部署要做一次）
+
+```bash
+# JDK 17（CentOS 7 仓库里没有，用 Adoptium 免安装版）
+mkdir -p /data/AI/pkg && cd /data/AI/pkg
+curl -fLO https://mirrors.tuna.tsinghua.edu.cn/Adoptium/17/jdk/x64/linux/OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz
+mkdir -p /data/AI/jdk17 && tar xzf OpenJDK17U-jdk_x64_linux_hotspot_17.0.21_9.tar.gz -C /data/AI/jdk17 --strip-components=1
+
+# Maven 3.9
+cd /data/AI/pkg
+curl -fLO https://mirrors.tuna.tsinghua.edu.cn/apache/maven/maven-3/3.9.16/binaries/apache-maven-3.9.16-bin.tar.gz
+mkdir -p /data/AI/maven && tar xzf apache-maven-3.9.16-bin.tar.gz -C /data/AI/maven --strip-components=1
+
+# 走阿里云镜像（否则拉依赖很慢）
+mkdir -p /root/.m2
+cat > /root/.m2/settings.xml <<'XML'
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0">
+  <mirrors>
+    <mirror>
+      <id>aliyun</id>
+      <url>https://maven.aliyun.com/repository/public</url>
+      <mirrorOf>central</mirrorOf>
+    </mirror>
+  </mirrors>
+</settings>
+XML
+```
+
+实测：2C2G 机器首次编译约 13 秒（下载 108MB 依赖），之后增量编译 6-15 秒。
+
+### 8.3 手工更新（不用脚本时）
 
 ```bash
 cd /path/to/agent-hub && git pull
@@ -226,6 +298,8 @@ ssh root@server '
   chown agenthub:agenthub /opt/agent-hub/agent-hub.jar
   systemctl start agent-hub'
 ```
+
+⚠️ 打包前记得停掉本地跑着的开发实例，它用 `-cp target\lib\*` 占着文件，不停会报 `Failed to delete`。
 
 数据库结构变更由 `DbMigration` 在启动时自动补列，**老库直接兼容**，不用手工执行 SQL。
 回滚就把 `.bak` 换回来重启（注意：新版本若已写入新字段，回滚后这些字段会被忽略，不会报错）。
@@ -270,3 +344,5 @@ EOF
 - [ ] `ss -lntp | grep 8899` 只看到 `127.0.0.1:8899`
 - [ ] 备份 cron 已跑过一次，`/opt/backup` 里有文件
 - [ ] 智能体 `tool_mode` 符合预期，`work_dir` 不在系统目录下
+- [ ] `ops.sh` 已就位且能跑：`/path/to/agent-hub/ops.sh status`、`ops.sh check` 全部通过
+- [ ] 走一遍更新流程：改一行代码 → `ops.sh` → 看到「部署成功」，再 `ops.sh rollback` 能切回去
