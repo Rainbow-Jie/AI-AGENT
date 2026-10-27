@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人中心 · Agent Hub</title>
+    <link rel="stylesheet" href="assets/app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><g fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round'><circle cx='16' cy='16' r='2.6' fill='white' stroke='none'/><circle cx='16' cy='6.8' r='2'/><circle cx='8.8' cy='21.4' r='2'/><circle cx='23.2' cy='21.4' r='2'/><path d='M16 8.8v4.6M14.2 17.6l-3.6 2.3M17.8 17.6l3.6 2.3'/></g></svg>">
+</head>
+<body>
+
+<header class="pf-top">
+    <a class="pf-brand" href="chat.html">
+        <span class="pf-mark" data-icon="logo"></span><span>Agent Hub</span>
+    </a>
+    <div class="pf-top-right">
+        <a class="btn btn-sm" href="chat.html">
+            <span class="ico" data-icon="arrowLeft" data-icon-size="14"></span>返回对话
+        </a>
+    </div>
+</header>
+
+<div class="pf-wrap">
+
+    <!-- 左：身份卡 -->
+    <aside class="card pf-side">
+        <div class="pf-ava" id="pf-ava">N</div>
+        <div class="pf-side-body">
+            <div class="pf-nm" id="pf-nm">加载中…</div>
+            <div class="pf-rl" id="pf-rl">-</div>
+            <div class="pf-tag" id="pf-tag" hidden>
+                <span data-icon="shield" data-icon-size="12"></span><span id="pf-tag-t">管理员</span>
+            </div>
+            <div class="pf-meta" id="pf-meta"></div>
+        </div>
+    </aside>
+
+    <!-- 右：资料 + 密码 -->
+    <div class="pf-main">
+
+        <section class="card">
+            <div class="card-head">
+                <h3><span data-icon="user" data-icon-size="15"></span>基本信息</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="field">
+                        <label for="pf-username">用户名</label>
+                        <input class="input" id="pf-username" disabled>
+                        <div class="hint">用户名是登录凭据，不支持修改</div>
+                    </div>
+                    <div class="field">
+                        <label for="pf-nick">昵称</label>
+                        <input class="input" id="pf-nick" maxlength="24" placeholder="显示在对话页与后台">
+                        <div class="hint">最多 24 个字符</div>
+                    </div>
+                </div>
+
+                <div class="field">
+                    <label>头像</label>
+                    <div class="ava-row">
+                        <div class="ava-preview" id="ava-preview">N</div>
+                        <div class="ava-actions">
+                            <div class="ava-btns">
+                                <button type="button" class="btn btn-sm" id="btn-upload">
+                                    <span class="ico" data-icon="image" data-icon-size="14"></span>上传图片
+                                </button>
+                                <button type="button" class="btn btn-sm" id="btn-reset">
+                                    <span class="ico" data-icon="user" data-icon-size="14"></span>恢复默认
+                                </button>
+                            </div>
+                            <div class="hint">支持 JPG / PNG / WebP，会自动居中裁成 200×200 再上传</div>
+                        </div>
+                        <input type="file" id="file-ava" accept="image/*" hidden>
+                    </div>
+                </div>
+
+                <div class="pf-actions">
+                    <button type="button" class="btn" id="btn-reload">放弃修改</button>
+                    <button type="button" class="btn btn-primary" id="btn-save">保存修改</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-head">
+                <h3><span data-icon="key" data-icon-size="15"></span>修改密码</h3>
+            </div>
+            <div class="card-body">
+                <div class="pwd-row">
+                    <div class="field">
+                        <label for="pwd-old">当前密码</label>
+                        <input class="input" id="pwd-old" type="password" autocomplete="current-password"
+                               placeholder="输入当前密码">
+                    </div>
+                    <div class="field">
+                        <label for="pwd-new">新密码</label>
+                        <input class="input" id="pwd-new" type="password" autocomplete="new-password"
+                               placeholder="至少 6 位">
+                    </div>
+                    <div class="field">
+                        <label for="pwd-new2">确认新密码</label>
+                        <input class="input" id="pwd-new2" type="password" autocomplete="new-password"
+                               placeholder="再输一次">
+                    </div>
+                </div>
+                <div class="pf-actions">
+                    <button type="button" class="btn btn-primary" id="btn-pwd">
+                        <span class="ico" data-icon="check" data-icon-size="14"></span>更新密码
+                    </button>
+                </div>
+            </div>
+        </section>
+
+    </div>
+</div>
+
+<script src="assets/icon.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/profile.js"></script>
+</body>
+</html>

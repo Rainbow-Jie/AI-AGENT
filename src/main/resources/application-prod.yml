@@ -1,0 +1,54 @@
+# ============================================================
+# 生产配置（启动时加 --spring.profiles.active=prod 生效）
+# 与 application.yml 是覆盖关系，这里只写「线上和本机不一样」的部分
+# ============================================================
+
+server:
+  port: 8899
+  # 只监听回环地址：外部一律经 nginx 进来，8899 不直接暴露到公网。
+  # 如果服务器没有 nginx、想让 Java 直接对外，把这行删掉。
+  address: 127.0.0.1
+  # 收到 SIGTERM 先停止接新请求，等正在跑的对话收尾（systemctl restart 不发呆）
+  shutdown: graceful
+  # 让 request.getRemoteAddr() 拿到 nginx 转发的真实 IP（登录限流、日志都用得上）
+  forward-headers-strategy: native
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types: text/html,text/css,application/javascript,application/json,image/svg+xml
+  tomcat:
+    threads:
+      max: 50
+    max-connections: 200
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    hikari:
+      # SQLite 只有一个写者，池子开太大只是多排队，6 个够用
+      maximum-pool-size: 6
+
+logging:
+  file:
+    name: ./logs/agent-hub.log
+  logback:
+    rollingpolicy:
+      max-file-size: 20MB
+      max-history: 14
+      total-size-cap: 400MB
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"
+
+agent-hub:
+  # 公网部署：关掉 URL 传令牌（会进 nginx 日志），关掉跨域（前后端同源）
+  security:
+    allow-token-param: false
+    cors-origins: ""
+  init-admin:
+    # 密码不写进仓库，从 /etc/agent-hub.env 注入；
+    # 留空则首次启动随机生成一个 12 位密码，只在日志里打印一次。
+    username: ${AGENT_HUB_ADMIN_USER:admin}
+    password: ${AGENT_HUB_ADMIN_PASSWORD:}
+  # 单次对话携带的历史条数，线上保持 10 即可；想省钱可以降到 6
+  history-limit: 10

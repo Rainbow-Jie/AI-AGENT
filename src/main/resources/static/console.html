@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 · Agent Hub</title>
+    <link rel="stylesheet" href="assets/app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><g fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round'><circle cx='16' cy='16' r='2.6' fill='white' stroke='none'/><circle cx='16' cy='6.8' r='2'/><circle cx='8.8' cy='21.4' r='2'/><circle cx='23.2' cy='21.4' r='2'/><path d='M16 8.8v4.6M14.2 17.6l-3.6 2.3M17.8 17.6l3.6 2.3'/></g></svg>">
+</head>
+<body>
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark" data-icon="logo"></div>
+            <div class="brand-name" id="brand-name">Agent Hub</div>
+        </div>
+
+        <nav class="nav" id="nav">
+            <div class="nav-item" data-view="dashboard">
+                <span class="ico" data-icon="dashboard"></span><span class="label">仪表盘</span>
+            </div>
+            <div class="nav-item" data-view="agents">
+                <span class="ico" data-icon="robot"></span><span class="label">智能体</span>
+            </div>
+            <div class="nav-item" data-view="models">
+                <span class="ico" data-icon="cpu"></span><span class="label">模型配置</span>
+            </div>
+            <div class="nav-item" data-view="kb">
+                <span class="ico" data-icon="book"></span><span class="label">知识库</span>
+            </div>
+            <div class="nav-item" data-view="users">
+                <span class="ico" data-icon="users"></span><span class="label">用户管理</span>
+            </div>
+            <div class="nav-item" data-view="settings">
+                <span class="ico" data-icon="settings"></span><span class="label">系统设置</span>
+            </div>
+        </nav>
+
+        <div class="sidebar-foot">
+            <a class="nav-item" href="chat.html">
+                <span class="ico" data-icon="chat"></span><span class="label">进入对话</span>
+            </a>
+            <div class="user-chip" id="user-chip">
+                <div class="avatar" id="user-avatar">N</div>
+                <div class="meta">
+                    <div class="nm" id="user-name">-</div>
+                    <div class="rl" id="user-role">-</div>
+                </div>
+                <span class="ico" data-icon="more" data-icon-size="15" style="color:var(--c-ink-4)"></span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main" id="view"></main>
+</div>
+
+<script src="assets/icon.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/md.js"></script>
+<script src="assets/console.js"></script>
+</body>
+</html>

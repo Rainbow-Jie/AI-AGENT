@@ -1,0 +1,7 @@
+# 统一换行符，避免 Windows 上 checkout 出来是 CRLF，
+# 传到 Linux 后 nginx / systemd 因为行尾不可见字符报奇怪的语法错。
+* text=auto eol=lf
+
+# Windows 批处理必须是 CRLF，否则 cmd 解析会出问题
+*.bat text eol=crlf
+*.cmd text eol=crlf

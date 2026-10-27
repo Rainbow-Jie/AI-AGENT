@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>对话 · Agent Hub</title>
+    <link rel="stylesheet" href="assets/app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><g fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round'><circle cx='16' cy='16' r='2.6' fill='white' stroke='none'/><circle cx='16' cy='6.8' r='2'/><circle cx='8.8' cy='21.4' r='2'/><circle cx='23.2' cy='21.4' r='2'/><path d='M16 8.8v4.6M14.2 17.6l-3.6 2.3M17.8 17.6l3.6 2.3'/></g></svg>">
+</head>
+<body>
+<div class="chat-shell">
+    <!-- 会话列表 -->
+    <aside class="session-pane">
+        <div class="sp-brand">
+            <div class="sp-mark" data-icon="logo"></div>
+            <span>Agent Hub</span>
+        </div>
+
+        <div class="top">
+            <button class="btn btn-primary" id="btn-new-chat">
+                <span class="ico" data-icon="plus" data-icon-size="15"></span>新建对话
+            </button>
+        </div>
+
+        <div class="session-list" id="session-list"></div>
+
+        <div class="sp-foot">
+            <a class="nav-item" href="console.html" id="admin-entry">
+                <span class="ico" data-icon="settings"></span><span class="label">管理后台</span>
+            </a>
+            <!-- 账号菜单：点用户卡片向上弹出，个人中心 / 退出登录 -->
+            <div class="acct-wrap">
+                <div class="acct-pop" id="acct-pop" role="menu" hidden>
+                    <div class="acct-head">
+                        <div class="nm" id="acct-nm">-</div>
+                        <div class="rl" id="acct-rl">-</div>
+                    </div>
+                    <a class="acct-item" href="profile.html" role="menuitem">
+                        <span class="ico" data-icon="user" data-icon-size="15"></span>个人中心
+                    </a>
+                    <button type="button" class="acct-item" id="acct-logout" role="menuitem">
+                        <span class="ico" data-icon="logout" data-icon-size="15"></span>退出登录
+                    </button>
+                </div>
+                <div class="user-chip" id="user-chip" role="button" tabindex="0"
+                     aria-haspopup="menu" aria-expanded="false" title="账号">
+                    <div class="avatar" id="user-avatar">N</div>
+                    <div class="meta">
+                        <div class="nm" id="user-name">-</div>
+                        <div class="rl" id="user-role">-</div>
+                    </div>
+                    <span class="chip-caret" data-icon="chevronDown" data-icon-size="13"></span>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- 对话区 -->
+    <main class="chat-pane">
+        <header class="chat-top">
+            <div class="agent-avatar" id="top-avatar"><span data-icon="robot" data-icon-size="19"></span></div>
+            <div style="min-width:0;flex:1">
+                <div class="agent-name" id="top-name">请选择智能体</div>
+                <div class="agent-sub" id="top-sub">从左侧新建对话或直接提问</div>
+            </div>
+            <!-- 自定义下拉：原生 select 的展开面板由系统绘制，样式完全不可控，
+                 跟整站的圆角/阴影体系格格不入，所以换成一整套自绘的 -->
+            <div class="agent-picker" id="agent-picker">
+                <button type="button" class="ap-trigger" id="ap-trigger"
+                        aria-haspopup="listbox" aria-expanded="false">
+                    <span class="ap-mark" id="ap-mark"><span data-icon="robot" data-icon-size="13"></span></span>
+                    <span class="ap-name" id="ap-name">选择智能体</span>
+                    <span class="ap-caret"><span data-icon="chevronDown" data-icon-size="13"></span></span>
+                </button>
+                <div class="ap-pop" id="ap-pop" role="listbox"></div>
+            </div>
+        </header>
+
+        <div class="chat-scroll" id="chat-scroll">
+            <div class="welcome" id="welcome">
+                <h1>今天想聊点什么？</h1>
+                <p class="sub">选择一个智能体开始对话，它会自动检索绑定知识库中的内容作答</p>
+                <div class="agent-cards" id="agent-cards"></div>
+            </div>
+        </div>
+
+        <div class="composer-wrap">
+            <div class="composer">
+                <textarea id="input" rows="1" placeholder="输入你的问题，Enter 发送，Shift+Enter 换行"></textarea>
+                <button class="send-btn" id="btn-send" title="发送">
+                    <span data-icon="arrowUp"></span>
+                </button>
+            </div>
+            <div class="composer-tip">回答由 AI 生成，请自行核对关键信息 · 有知识库时优先引用知识库</div>
+        </div>
+    </main>
+</div>
+
+<script src="assets/icon.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/md.js"></script>
+<script src="assets/chat.js"></script>
+</body>
+</html>

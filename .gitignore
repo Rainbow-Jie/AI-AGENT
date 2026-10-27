@@ -1,0 +1,25 @@
+# ---------- 构建产物 ----------
+target/
+*.jar
+*.class
+
+# ---------- 运行时数据（绝对不要提交）----------
+data/
+logs/
+workspace/
+*.db
+*.db-shm
+*.db-wal
+*.log
+
+# ---------- 本地环境 ----------
+deploy/agent-hub.env
+.env
+.env.*
+
+# ---------- 编辑器 / 系统 ----------
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,53 @@
+# ============================================================
+# Agent Hub · systemd 服务
+# 放 /etc/systemd/system/agent-hub.service
+#   systemctl daemon-reload && systemctl enable --now agent-hub
+#   journalctl -u agent-hub -f        看日志
+# ============================================================
+
+[Unit]
+Description=Agent Hub (Spring Boot)
+Documentation=file:/opt/agent-hub/deploy/DEPLOY.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agenthub
+Group=agenthub
+WorkingDirectory=/opt/agent-hub
+
+# 环境变量（管理员初始密码、数据文件路径等），权限设成 600
+EnvironmentFile=/etc/agent-hub.env
+Environment=JAVA_OPTS=-Xms256m -Xmx1024m -XX:+UseG1GC
+
+# 用 -jar 跑打包好的可执行 jar；时区和编码显式指定，避免日志时间差 8 小时
+ExecStart=/usr/bin/java $JAVA_OPTS \
+    -Dfile.encoding=UTF-8 \
+    -Duser.timezone=Asia/Shanghai \
+    -jar /opt/agent-hub/agent-hub.jar \
+    --spring.profiles.active=prod
+
+Restart=always
+RestartSec=5
+# 优雅停机（server.shutdown=graceful）退出码会是 143，别当成失败反复重启
+SuccessExitStatus=143
+TimeoutStopSec=40
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-hub
+
+# ---------- 最小权限 ----------
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+# 只有这三个目录可写：数据库、日志、智能体工作目录
+ReadWritePaths=/opt/agent-hub/data /opt/agent-hub/logs /opt/agent-hub/workspace
+
+[Install]
+WantedBy=multi-user.target

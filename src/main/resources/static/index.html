@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Hub · 有问题，直接问</title>
+    <link rel="stylesheet" href="assets/app.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%234f46e5'/><g fill='none' stroke='white' stroke-width='1.9' stroke-linecap='round'><circle cx='16' cy='16' r='2.6' fill='white' stroke='none'/><circle cx='16' cy='6.8' r='2'/><circle cx='8.8' cy='21.4' r='2'/><circle cx='23.2' cy='21.4' r='2'/><path d='M16 8.8v4.6M14.2 17.6l-3.6 2.3M17.8 17.6l3.6 2.3'/></g></svg>">
+</head>
+<body>
+<div class="login-wrap">
+    <div class="login-shell">
+
+        <!-- 左：给使用者看的价值主张 -->
+        <section class="login-aside">
+            <div class="la-brand">
+                <div class="la-mark" data-icon="logo"></div>
+                <span>Agent Hub</span>
+            </div>
+
+            <h2 class="la-title">有问题，<br>直接问它</h2>
+            <p class="la-desc">制度、合同、产品资料、会议记录都已整理进知识库。<br>说清楚你想知道什么，它会把原文找出来，再告诉你出处。</p>
+
+            <!-- 一段示例对话：比罗列功能更快让人明白这东西怎么用 -->
+            <div class="la-preview">
+                <div class="lp-q">出差住宿标准是多少？</div>
+                <div class="lp-a">
+                    <p>一线城市每晚不超过 600 元，其他城市 450 元；超标部分需要部门负责人审批。</p>
+                    <span class="lp-cite">
+                        <span data-icon="book" data-icon-size="10"></span>差旅管理办法 · 住宿标准
+                    </span>
+                </div>
+            </div>
+
+            <div class="la-foot">
+                <span class="dot"></span>回答都标注原文出处 · 资料不出内网
+            </div>
+        </section>
+
+        <!-- 右：登录表单 -->
+        <section class="login-main">
+            <div class="login-card">
+                <h1>登录，接着问</h1>
+                <p class="sub">用公司账号登录，历史对话都还在。</p>
+
+                <form id="login-form" autocomplete="off">
+                    <div class="field">
+                        <label for="username">账号</label>
+                        <input class="input" id="username" name="username" placeholder="你的公司账号"
+                               autocomplete="username" required>
+                    </div>
+                    <div class="field">
+                        <label for="password">密码</label>
+                        <input class="input" id="password" name="password" type="password" placeholder="请输入密码"
+                               autocomplete="current-password" required>
+                    </div>
+                    <button class="btn btn-primary btn-lg" id="login-btn" type="submit">登 录</button>
+                </form>
+
+                <p class="login-hint">忘了密码？找 IT 同事帮你重置一下就行。</p>
+            </div>
+        </section>
+
+    </div>
+</div>
+
+<script src="assets/icon.js"></script>
+<script src="assets/api.js"></script>
+<script src="assets/login.js"></script>
+</body>
+</html>
