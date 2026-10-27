@@ -43,6 +43,8 @@
         } catch (e) { /* ignore */ }
 
         const hash = (location.hash || '').replace('#', '');
+        // 费用要按实时单价算，先把价格拉回来再渲染（失败会自动回落到内置价）
+        await loadPricing();
         go(VIEWS.indexOf(hash) >= 0 ? hash : 'dashboard');
 
         // 支持通过 location.hash 直接切换（仪表盘里的快捷按钮）
@@ -1123,7 +1125,10 @@
        系统设置
        ============================================================ */
     async function viewSettings() {
-        const s = await http.get('/api/admin/settings');
+        const [s, p] = await Promise.all([
+            http.get('/api/admin/settings'),
+            http.get('/api/pricing').catch(() => null)
+        ]);
         let html = head('系统设置', '站点信息与账号安全');
 
         html += `<div class="row" style="align-items:flex-start">
@@ -1163,6 +1168,14 @@
                     <button class="btn btn-primary" id="btn-save-pwd">修改密码</button>
                 </div>
             </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+            <div class="card-head">
+                <h3>${Icon('coins', 16)}模型单价</h3>
+                <button class="btn btn-sm" id="btn-refresh-price">立即刷新</button>
+            </div>
+            <div class="card-body">${pricingCard(p)}</div>
         </div>
 
         <div class="card" style="margin-top:16px">
@@ -1221,6 +1234,85 @@
                 UI.err(e.message);
             }
         };
+
+        document.getElementById('btn-refresh-price').onclick = async (e) => {
+            const btn = e.currentTarget;
+            btn.disabled = true;
+            btn.textContent = '抓取中…';
+            try {
+                const r = await http.post('/api/admin/pricing/refresh');
+                if (r && r.ok) {
+                    UI.ok('已同步到最新价格');
+                    // 清掉前端缓存，下次算费用就用新价了
+                    resetPricing();
+                    await loadPricing();
+                    viewSettings();
+                } else {
+                    const why = (r && r.result && r.result.error) || '页面结构可能变了，需要人工确认';
+                    UI.err('抓取失败，仍沿用上一次的价格：' + why);
+                    btn.disabled = false;
+                    btn.textContent = '立即刷新';
+                }
+            } catch (err) {
+                UI.err(err.message || '刷新失败');
+                btn.disabled = false;
+                btn.textContent = '立即刷新';
+            }
+        };
+    }
+
+    /**
+     * 模型单价卡片：官方页面每天凌晨同步一次，这里只做展示。
+     * 每格写成「空闲价 / 高峰价」，两档差一倍，混在一起看容易算错。
+     */
+    function pricingCard(p) {
+        const source = (p && p.source) || 'https://api-docs.deepseek.com/zh-cn/quick_start/pricing';
+        const models = (p && p.models) || {};
+        const names = Object.keys(models);
+
+        if (!p || !p.ok || !names.length) {
+            const detail = p && p.error ? `<div style="margin-top:6px">最近一次失败：${UI.esc(p.error)}</div>` : '';
+            return `<div class="notice error">${Icon('alert', 15)}<div>
+                还没有成功抓到官方价格，当前费用按<b>内置兜底价</b>估算，可能已经过时。
+                确认这台机器能访问 <code>api-docs.deepseek.com</code> 后点右上角「立即刷新」。${detail}</div></div>`;
+        }
+
+        const rows = names.map((n) => {
+            const m = models[n] || {};
+            const peak = m.peak || {};
+            const off = m.offPeak || {};
+            const cell = (k) => off[k] == null && peak[k] == null
+                ? '<span style="color:var(--muted)">-</span>'
+                : `¥${off[k] == null ? '-' : off[k]} <span style="color:var(--muted)">/ ¥${peak[k] == null ? '-' : peak[k]}</span>`;
+            return `<tr>
+                <td><b>${UI.esc(n)}</b>${n === p.model ? ' <span class="badge">在用</span>' : ''}</td>
+                <td>${cell('cacheHit')}</td>
+                <td>${cell('cacheMiss')}</td>
+                <td>${cell('output')}</td>
+            </tr>`;
+        }).join('');
+
+        let warn = '';
+        if (p.stale) {
+            warn = `<div class="notice warning" style="margin-top:12px">${Icon('alert', 15)}
+                <div>价格超过 48 小时没更新成功，可能已过时。点「立即刷新」重试。</div></div>`;
+        } else if (p.error) {
+            warn = `<div class="notice warning" style="margin-top:12px">${Icon('alert', 15)}
+                <div>最近一次同步失败（${UI.esc(p.error)}），当前沿用上一次成功的价格。</div></div>`;
+        }
+
+        return `<div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.7">
+                每天凌晨 3:10 自动从 <a href="${UI.esc(source)}" target="_blank">DeepSeek 官方定价页</a>同步一次。
+                单位「元 / 百万 tokens」，每格是 <b>空闲价 / 高峰价</b>；
+                高峰为北京时间工作日 9:00-12:00、14:00-18:00，其余时段（含周末、法定假日）按空闲价。
+            </div>
+            <table class="table">
+                <thead><tr><th>模型</th><th>输入 · 缓存命中</th><th>输入 · 未命中</th><th>输出</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+            <div style="margin-top:12px;font-size:12.5px;color:var(--muted)">
+                上次更新：<b>${UI.esc(p.fetchedAt || '从未成功')}</b>
+            </div>${warn}`;
     }
 
     boot();

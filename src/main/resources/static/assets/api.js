@@ -178,15 +178,49 @@ async function streamChat(body, handlers) {
 /* ---------------- Token 费用估算 ---------------- */
 
 /**
- * DeepSeek 计费参数（人民币 / 百万 token）。
- * 2026-08-17 起改为峰谷定价：高峰 = 工作日 09:00-12:00、14:00-18:00，价格为空闲的 2 倍。
- * 这里按 DeepSeek-V4-Flash（接口模型名 deepseek-flash）填写，
- * 换模型或官方调价时改这几个数即可。
+ * 兜底单价（人民币 / 百万 token）。
+ * 正常情况下用后端每天凌晨从 DeepSeek 官方定价页抓回来的实时价格（见 loadPricing），
+ * 这里只在「还没拿到」或「抓取失败」时顶一下，避免页面算不出钱。
+ * 数值对应 deepseek-flash，官方调价后不用改这里，改也不用——它会自己更新。
  */
 const TOKEN_PRICE = {
-    'off-peak': {cacheHit: 0.05, cacheMiss: 1.5, output: 4.5},
-    'peak': {cacheHit: 0.10, cacheMiss: 3.0, output: 9.0}
+    'off-peak': {cacheHit: 0.02, cacheMiss: 1, output: 4},
+    'peak': {cacheHit: 0.04, cacheMiss: 2, output: 8}
 };
+
+/** 后端给的实时价格：{peak:{...}, offPeak:{...}}；null 表示还没拿到 */
+let LIVE_PRICE = null;
+let LIVE_PRICE_META = null;
+let priceLoading = null;
+
+/**
+ * 拉一次实时单价，页面启动时 await 它。
+ * 失败不抛异常：费用只是辅助信息，不该让页面起不来。
+ */
+function loadPricing() {
+    if (priceLoading) return priceLoading;
+    priceLoading = api('GET', '/api/pricing').then((d) => {
+        if (d && d.price && d.price.peak && d.price.offPeak) {
+            LIVE_PRICE = {peak: d.price.peak, 'off-peak': d.price.offPeak};
+            LIVE_PRICE_META = d;
+        }
+        return LIVE_PRICE_META;
+    }).catch(() => null);
+    return priceLoading;
+}
+
+/** 当前该用哪套价：实时价优先，没有就用兜底 */
+function activePrice(peak) {
+    return (LIVE_PRICE && LIVE_PRICE[peak ? 'peak' : 'off-peak'])
+        || TOKEN_PRICE[peak ? 'peak' : 'off-peak'];
+}
+
+/** 管理端手动刷新价格后调用，让下次读价重新拉一遍 */
+function resetPricing() {
+    LIVE_PRICE = null;
+    LIVE_PRICE_META = null;
+    priceLoading = null;
+}
 
 function isPeakTime(d) {
     const t = d || new Date();
@@ -198,11 +232,11 @@ function isPeakTime(d) {
 
 /**
  * 估算一次调用的费用（元）。
- * 缓存命中与未命中差 30 倍，必须分开算；只按总 token 估会离谱。
+ * 缓存命中与未命中差 50 倍，必须分开算；只按总 token 估会离谱。
  */
 function estimateCost(u) {
     if (!u || !u.totalTokens) return 0;
-    const p = isPeakTime() ? TOKEN_PRICE['peak'] : TOKEN_PRICE['off-peak'];
+    const p = activePrice(isPeakTime());
     const prompt = Number(u.promptTokens || 0);
     const hit = Number(u.cacheHitTokens || 0);
     const miss = (u.cacheHitRate === undefined || u.cacheHitRate === null)
