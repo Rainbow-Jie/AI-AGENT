@@ -45,13 +45,19 @@ public class UserService {
         return user;
     }
 
-    public SysUser update(SysUser input) {
+    public SysUser update(SysUser input, SysUser current) {
         if (input.getId() == null) {
             throw new BizException(400, "缺少用户 ID");
         }
         SysUser db = userMapper.findById(input.getId());
         if (db == null) {
             throw new BizException("用户不存在");
+        }
+        // 编辑弹窗里也能改状态，这条路径同样要挡住「停用自己 / 停掉最后一个管理员」
+        boolean disabling = input.getStatus() != null && input.getStatus() == 0
+                && (db.getStatus() == null || db.getStatus() == 1);
+        if (disabling) {
+            guardDisable(db, current);
         }
         db.setNickname(emptyToNull(input.getNickname()) == null ? db.getNickname() : input.getNickname().trim());
         db.setRole(input.getRole() == null ? db.getRole() : input.getRole());
@@ -66,6 +72,49 @@ public class UserService {
         userMapper.update(db);
         tokenStore.refreshUser(db);
         return db;
+    }
+
+    /**
+     * 启用 / 停用。列表页的一键开关，和编辑弹窗里的「状态」走同一套校验。
+     * <p>
+     * 停用会立刻通过 TokenStore 把在线令牌里的状态刷成 0，
+     * 该用户的下一个请求就会被拦下（403），不需要等令牌过期。
+     */
+    public SysUser setStatus(String id, int status, SysUser current) {
+        if (status != 0 && status != 1) {
+            throw new BizException(400, "状态值只能是 0 或 1");
+        }
+        SysUser db = userMapper.findById(id);
+        if (db == null) {
+            throw new BizException("用户不存在");
+        }
+        if (status == 0) {
+            guardDisable(db, current);
+        }
+        db.setStatus(status);
+        db.setUpdatedAt(IdGen.now());
+        userMapper.update(db);
+        tokenStore.refreshUser(db);
+        return db;
+    }
+
+    /**
+     * 停用前的前置校验：不能把自己锁在门外，也不能把系统停成没人管
+     */
+    private void guardDisable(SysUser target, SysUser current) {
+        if (target.getId().equals(current.getId())) {
+            throw new BizException("不能停用当前登录账号");
+        }
+        if ("ADMIN".equals(target.getRole())) {
+            long enabledAdmins = userMapper.list(null).stream()
+                    .filter(u -> "ADMIN".equals(u.getRole()))
+                    .filter(u -> u.getStatus() == null || u.getStatus() == 1)
+                    .filter(u -> !u.getId().equals(target.getId()))
+                    .count();
+            if (enabledAdmins == 0) {
+                throw new BizException("系统至少需要保留一个启用状态的管理员");
+            }
+        }
     }
 
     public void delete(String id, SysUser current) {

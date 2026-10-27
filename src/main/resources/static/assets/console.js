@@ -956,24 +956,70 @@
     /* ============================================================
        用户管理
        ============================================================ */
+    /** token 数太大，表格里按万/亿缩写，精确值放 title 里 */
+    function fmtTokens(n) {
+        const v = Number(n || 0);
+        if (v >= 1e8) return (v / 1e8).toFixed(2) + ' 亿';
+        if (v >= 1e4) return (v / 1e4).toFixed(1) + ' 万';
+        return v.toLocaleString();
+    }
+
     async function viewUsers() {
-        const list = await http.get('/api/admin/users');
-        let html = head('用户管理', '管理员可创建账号、重置密码、停用账号',
+        // 用量统计失败不能拖垮整页：列表照常显示，只是不挂数字
+        const [list, usage] = await Promise.all([
+            http.get('/api/admin/users'),
+            http.get('/api/admin/users/usage').catch(() => ({users: {}, total: {}}))
+        ]);
+        const stats = usage.users || {};
+        const sum = usage.total || {};
+
+        let html = head('用户管理', '停用后该账号立即无法登录，已登录的会话也会失效',
             `<button class="btn btn-primary" id="btn-new-user">${Icon('plus', 15)}新建用户</button>`);
 
+        if (sum.totalTokens) {
+            html += `<div class="notice info" style="margin-bottom:16px">${Icon('info', 15)}
+                <div>全员累计消耗 <b>${fmtTokens(sum.totalTokens)}</b> token
+                （输入 ${fmtTokens(sum.promptTokens)} · 输出 ${fmtTokens(sum.completionTokens)}，
+                缓存命中 ${sum.cacheHitRate == null ? '未知' : sum.cacheHitRate + '%'}），
+                预估费用 <b>${fmtCost(estimateCost(sum))}</b>。
+                金额按当前模型单价估算，仅供参考，以账单为准。</div>
+            </div>`;
+        }
+
         html += `<div class="card"><table class="table">
-            <thead><tr><th>用户名</th><th>昵称</th><th>角色</th><th>状态</th><th>最后登录</th><th style="width:150px">操作</th></tr></thead>
-            <tbody>${list.map((u) => `<tr>
-                <td><b>${UI.esc(u.username)}</b>${u.id === App.user.id ? ' <span class="badge badge-gray">当前</span>' : ''}</td>
-                <td>${UI.esc(u.nickname || '-')}</td>
+            <thead><tr>
+                <th>用户</th><th>角色</th><th>状态</th><th>累计用量</th><th>预估费用</th>
+                <th>最后登录</th><th style="width:210px">操作</th>
+            </tr></thead>
+            <tbody>${list.map((u) => {
+                const st = stats[u.id];
+                const isSelf = u.id === App.user.id;
+                return `<tr>
+                <td>
+                    <b>${UI.esc(u.username)}</b>${isSelf ? ' <span class="badge badge-gray">当前</span>' : ''}
+                    ${u.nickname && u.nickname !== u.username
+                        ? `<div style="font-size:11.5px;color:var(--muted)">${UI.esc(u.nickname)}</div>` : ''}
+                </td>
                 <td>${u.role === 'ADMIN' ? '<span class="badge">管理员</span>' : '<span class="badge badge-gray">普通用户</span>'}</td>
                 <td>${u.status === 1 ? '<span class="badge badge-green">启用</span>' : '<span class="badge badge-red">停用</span>'}</td>
+                <td>${st && st.totalTokens
+                    ? `<b title="输入 ${Number(st.promptTokens).toLocaleString()} · 输出 ${Number(st.completionTokens).toLocaleString()}">
+                           ${fmtTokens(st.totalTokens)}</b>
+                       <div style="font-size:11.5px;color:var(--muted)">${st.messages} 轮${
+                           st.cacheHitRate == null ? '' : ' · 命中 ' + st.cacheHitRate + '%'}</div>`
+                    : '<span style="color:var(--muted)">—</span>'}</td>
+                <td>${st && st.totalTokens
+                    ? `<b>${fmtCost(estimateCost(st))}</b>`
+                    : '<span style="color:var(--muted)">—</span>'}</td>
                 <td style="color:var(--muted);font-size:12px">${UI.fmtTime(u.lastLoginAt) || '-'}</td>
                 <td>
                     <button class="btn btn-sm" data-edit="${u.id}">编辑</button>
-                    ${u.id === App.user.id ? '' : `<button class="btn btn-sm btn-danger" data-del="${u.id}">删除</button>`}
+                    ${isSelf ? '' : `<button class="btn btn-sm" data-toggle="${u.id}"
+                        >${u.status === 1 ? '停用' : '启用'}</button>`}
+                    ${isSelf ? '' : `<button class="btn btn-sm btn-danger" data-del="${u.id}">删除</button>`}
                 </td>
-            </tr>`).join('')}</tbody>
+            </tr>`;
+            }).join('')}</tbody>
         </table></div>`;
 
         document.getElementById('view').innerHTML = html;
@@ -981,6 +1027,32 @@
         document.querySelectorAll('[data-edit]').forEach((btn) => {
             btn.onclick = () => userDialog(list.find((x) => x.id === btn.dataset.edit));
         });
+
+        // 启用/停用：停用是不可逆的「踢人」动作，要二次确认；启用直接生效
+        document.querySelectorAll('[data-toggle]').forEach((btn) => {
+            btn.onclick = async () => {
+                const u = list.find((x) => x.id === btn.dataset.toggle);
+                const next = u.status === 1 ? 0 : 1;
+                const run = async () => {
+                    btn.disabled = true;
+                    try {
+                        await http.post(`/api/admin/users/${u.id}/status`, {status: next});
+                        UI.ok(next === 1 ? '已启用' : '已停用');
+                        viewUsers();
+                    } catch (e) {
+                        UI.err(e.message || '操作失败');
+                        btn.disabled = false;
+                    }
+                };
+                if (next === 0) {
+                    UI.confirm(`确定停用「${u.username}」？停用后该账号立即无法登录，`
+                        + '已经登录的会话也会当场失效。', run, true);
+                } else {
+                    run();
+                }
+            };
+        });
+
         document.querySelectorAll('[data-del]').forEach((btn) => {
             btn.onclick = () => {
                 const u = list.find((x) => x.id === btn.dataset.del);

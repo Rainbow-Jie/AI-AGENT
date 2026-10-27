@@ -83,6 +83,12 @@ async function api(method, path, body, opts) {
         throw new Error('登录已失效，请重新登录');
     }
     if (data.code !== 0) {
+        // 被管理员停用：令牌本身还能解析，但每个请求都会被拦。
+        // 不在这里踢回登录页的话，页面会一直卡在原地报错，用户不知道发生了什么。
+        if (data.code === 403 && String(data.msg || '').indexOf('停用') >= 0) {
+            Store.clear();
+            location.href = 'index.html';
+        }
         throw new Error(data.msg || '请求失败');
     }
     return data.data;

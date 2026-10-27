@@ -1,5 +1,6 @@
 package com.goocidata.agent.mapper;
 
+import com.goocidata.agent.dto.UsageRow;
 import com.goocidata.agent.entity.ChatMessage;
 import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Insert;
@@ -40,4 +41,16 @@ public interface ChatMessageMapper {
     @Select("SELECT usage FROM chat_message WHERE usage IS NOT NULL AND usage <> '' "
             + "ORDER BY created_at DESC LIMIT 5000")
     List<String> listUsages();
+
+    /**
+     * 带归属人的用量记录：消息本身没存用户，用户挂在会话上。
+     * <p>
+     * 会话被删时消息一并删除，所以这里不会有孤儿行；但用户被删后会话仍保留，
+     * 这种行的 user_id 已经找不到对应账号，聚合时会被忽略。
+     */
+    @Select("SELECT s.user_id AS userId, m.usage AS usage "
+            + "FROM chat_message m JOIN chat_session s ON s.id = m.session_id "
+            + "WHERE m.usage IS NOT NULL AND m.usage <> '' "
+            + "ORDER BY m.created_at DESC LIMIT 20000")
+    List<UsageRow> listUsagesByUser();
 }
