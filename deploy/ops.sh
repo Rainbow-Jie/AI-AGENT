@@ -87,7 +87,14 @@ on_abort() {
         printf '[ops] 恢复失败！请手动执行：systemctl start %s\n' "$SERVICE" >&2 2>/dev/null
     fi
 }
-trap on_abort EXIT INT TERM HUP
+
+# 收到信号时先恢复服务，然后立刻退出；不能让 trap 返回后脚本继续往下跑
+on_signal() {
+    on_abort
+    exit 130
+}
+trap on_signal INT TERM HUP
+trap on_abort EXIT
 
 # ============================ 工具函数 ============================
 need_root() {
