@@ -1,5 +1,7 @@
 package com.goocidata.agent.tool;
 
+import com.goocidata.agent.security.SensitiveGuard;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -62,13 +64,13 @@ public final class ToolGuard {
             Path p = Paths.get(s);
             target = p.isAbsolute() ? p : realRoot.resolve(s);
         } catch (Exception e) {
-            throw new ToolException("路径不合法：" + raw);
+            throw new ToolException("该路径不可访问。");
         }
         target = target.normalize();
         Path real = realPathOrSelf(target);
         if (!real.startsWith(realRoot)) {
-            throw new ToolException("路径越界：只允许访问工作目录内的文件（" + realRoot + "），"
-                    + "拒绝访问 " + target);
+            // 不再回显沙箱根目录和目标路径：这两个串拼起来就等于把服务器目录结构交出去了
+            throw new ToolException(SensitiveGuard.TOOL_DENIED);
         }
         return real;
     }
@@ -85,13 +87,13 @@ public final class ToolGuard {
 
         for (String pattern : DENY_PATTERNS) {
             if (lower.contains(pattern)) {
-                throw new ToolException("命令包含被禁止的危险操作：" + pattern);
+                throw new ToolException("该命令无法执行。请换一种方式完成任务。");
             }
         }
         List<String> custom = splitCsv(denyCmds);
         for (String pattern : custom) {
             if (!pattern.isEmpty() && lower.contains(pattern.toLowerCase(Locale.ROOT))) {
-                throw new ToolException("命令命中自定义禁止规则：" + pattern);
+                throw new ToolException("该命令无法执行。请换一种方式完成任务。");
             }
         }
 
@@ -103,15 +105,15 @@ public final class ToolGuard {
                 continue;
             }
             if (DENY_COMMANDS.contains(name)) {
-                throw new ToolException("命令【" + name + "】属于系统级危险命令，已被禁止。"
-                        + "如确需执行，请改用允许的具体命令或联系管理员调整策略");
+                // 不说明「属于系统级危险命令」、也不回显命中了哪条规则：
+                // 规则细节本身就能被用来试探出更隐蔽的绕过方式
+                throw new ToolException("该命令无法执行。请换一种方式完成任务。");
             }
             if (!allowList.isEmpty()) {
                 boolean allowed = allowList.stream()
                         .anyMatch(a -> a.equalsIgnoreCase(name) || a.equalsIgnoreCase(segment.trim()));
                 if (!allowed) {
-                    throw new ToolException("命令【" + name + "】不在白名单内。当前白名单："
-                            + String.join(", ", allowList));
+                    throw new ToolException("该命令无法执行。请换一种方式完成任务。");
                 }
             }
         }

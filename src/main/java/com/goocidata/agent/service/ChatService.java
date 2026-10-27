@@ -12,6 +12,7 @@ import com.goocidata.agent.entity.SysUser;
 import com.goocidata.agent.mapper.ChatMessageMapper;
 import com.goocidata.agent.mapper.ChatSessionMapper;
 import com.goocidata.agent.mapper.LlmConfigMapper;
+import com.goocidata.agent.security.SensitiveGuard;
 import com.goocidata.agent.tool.ToolBox;
 import com.goocidata.agent.tool.ToolCall;
 import com.goocidata.agent.tool.ToolContext;
@@ -121,6 +122,27 @@ public class ChatService {
             userMsg.setContent(question);
             userMsg.setCreatedAt(IdGen.now());
             messageMapper.insert(userMsg);
+
+            // 1.5 敏感提问：不检索、不调模型、不碰工具，直接统一答复。
+            // 放在检索之前是有意的——检索命中会把参考资料塞进上下文，
+            // 模型就有机会把资料里的服务器信息顺口复述出来；而且这条路一次模型调用都不花。
+            String sensitiveRule = SensitiveGuard.matchAsk(question);
+            if (sensitiveRule != null) {
+                log.warn("敏感提问已拦截 session={} 规则={} 提问=\"{}\"",
+                        session.getId(), sensitiveRule, SensitiveGuard.forLog(question));
+                Map<String, Object> meta = new HashMap<>(6);
+                meta.put("type", "meta");
+                meta.put("sessionId", session.getId());
+                meta.put("refs", List.of());
+                meta.put("toolMode", "off");
+                meta.put("tools", List.of());
+                send(emitter, meta);
+                sendRefusal(emitter, false);
+                persistAssistant(session.getId(), SensitiveGuard.REFUSAL, null, null, null);
+                sessionMapper.touch(session.getId(), IdGen.now());
+                emitter.complete();
+                return;
+            }
 
             // 2. 检索知识库
             List<String> kbIds = AgentService.splitIds(agent.getKbIds());
@@ -295,27 +317,28 @@ public class ChatService {
                         + "可在「模型配置」里调大 max_tokens，或让我分段继续写。";
             }
 
+            // 7.5 最后一道：真实泄露特征兜底。
+            // 输入规则本质上只能挡住「想到的问法」，模型仍可能在正常问题里顺口带出
+            // 服务器绝对路径、密钥形状或「没有权限」这类表述。这里按事实特征判断，
+            // 命中就把已经逐字吐出去的内容整段撤回，换成统一答复。
+            String leak = SensitiveGuard.detectLeak(answer);
+            if (leak != null) {
+                log.warn("回答命中敏感特征，已替换为统一答复 session={} 特征={} 原文=\"{}\"",
+                        session.getId(), leak, SensitiveGuard.forLog(answer));
+                answer = SensitiveGuard.REFUSAL;
+                sendRefusal(emitter, true);
+            }
+
             // 8. 落库
-            ChatMessage assistantMsg = new ChatMessage();
-            assistantMsg.setId(IdGen.next());
-            assistantMsg.setSessionId(session.getId());
-            assistantMsg.setRole("assistant");
-            assistantMsg.setContent(answer == null ? "" : answer);
-            assistantMsg.setRefs(hits.isEmpty() ? null : objectMapper.writeValueAsString(hits));
-            if (!toolLog.isEmpty()) {
-                assistantMsg.setToolLog(objectMapper.writeValueAsString(toolLog));
-            }
             String usageJson = usageJson(totalUsage);
-            if (usageJson != null) {
-                assistantMsg.setUsage(usageJson);
-            }
-            assistantMsg.setCreatedAt(IdGen.now());
-            messageMapper.insert(assistantMsg);
+            String refsJson = hits.isEmpty() ? null : objectMapper.writeValueAsString(hits);
+            String toolLogJson = toolLog.isEmpty() ? null : objectMapper.writeValueAsString(toolLog);
+            String messageId = persistAssistant(session.getId(), answer, refsJson, toolLogJson, usageJson);
             sessionMapper.touch(session.getId(), IdGen.now());
 
             Map<String, Object> done = new HashMap<>(4);
             done.put("type", "done");
-            done.put("messageId", assistantMsg.getId());
+            done.put("messageId", messageId);
             done.put("usage", usageMap(totalUsage));
             send(emitter, done);
             emitter.complete();
@@ -323,8 +346,10 @@ public class ChatService {
             log.warn("对话业务异常: {}", e.getMessage());
             sendError(emitter, e.getMessage());
         } catch (Exception e) {
+            // 异常原文里有堆栈、文件路径、SQL 片段，一律只进日志。
+            // 回给用户的必须是中性文案，否则「报错」本身就成了泄露通道。
             log.error("对话异常", e);
-            sendError(emitter, "对话失败：" + (e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage()));
+            sendError(emitter, "对话处理失败，请稍后重试。如持续出现，请联系管理员。");
         } finally {
             if (session != null) {
                 sessionMapper.touch(session.getId(), IdGen.now());
@@ -333,12 +358,49 @@ public class ChatService {
     }
 
     /**
+     * 推送统一拒绝答复。
+     * <p>
+     * {@code needReset} 用于「已经逐字流式输出过一段」的场景：先发 reset 让前端清空气泡，
+     * 再把统一答复当正文推下去，用户看到的就是干净的一句拒绝，看不到被撤回的半截内容。
+     */
+    private void sendRefusal(SseEmitter emitter, boolean needReset) {
+        if (needReset) {
+            Map<String, Object> reset = new HashMap<>(2);
+            reset.put("type", "reset");
+            send(emitter, reset);
+        }
+        Map<String, Object> delta = new HashMap<>(3);
+        delta.put("type", "delta");
+        delta.put("content", SensitiveGuard.REFUSAL);
+        send(emitter, delta);
+    }
+
+    /**
+     * 落一条助手消息。拒绝答复和正常回答走同一个入口，
+     * 避免两条路写法不一致（早期版本这里复制过一份，字段漏了就很难发现）。
+     */
+    private String persistAssistant(String sessionId, String content, String refsJson,
+                                    String toolLogJson, String usageJson) {
+        ChatMessage msg = new ChatMessage();
+        msg.setId(IdGen.next());
+        msg.setSessionId(sessionId);
+        msg.setRole("assistant");
+        msg.setContent(content == null ? "" : content);
+        msg.setRefs(refsJson);
+        msg.setToolLog(toolLogJson);
+        msg.setUsage(usageJson);
+        msg.setCreatedAt(IdGen.now());
+        messageMapper.insert(msg);
+        return msg.getId();
+    }
+
+    /**
      * 构造工具执行上下文：目录不存在时兜底创建（防手工改库导致路径失效）
      */
     private ToolContext buildToolContext(AgentInfo agent) {
         String dir = agent.getWorkDir();
         if (dir == null || dir.trim().isEmpty()) {
-            throw new BizException("该智能体已开启工具但未配置工作目录，请到管理后台补填");
+            throw new BizException("该智能体暂不可用，请联系管理员检查工具配置");
         }
         Path root;
         try {
@@ -351,7 +413,9 @@ public class ChatService {
             }
             root = p.toRealPath();
         } catch (Exception e) {
-            throw new BizException("工作目录不可用：" + dir + "（" + e.getMessage() + "）");
+            // 具体路径和异常只进日志，不回给用户：路径本身就是敏感信息
+            log.error("工作目录不可用 dir={}", dir, e);
+            throw new BizException("该智能体暂不可用，请联系管理员检查工具配置");
         }
         ToolContext ctx = new ToolContext();
         ctx.setRoot(root);
@@ -654,6 +718,10 @@ public class ChatService {
                     .append("不要为了查知识库去搜索工作目录，更不要因为搜不到就说「知识库是空的」；\n")
                     .append("8. 完成后用中文简要说明你做了什么、改动了哪些文件、结果如何。");
         }
+
+        // 安全规则放最后：模型对靠后的指令服从度更高，而且要压在管理员配置的
+        // 角色设定、工具规则之上，避免一句「有问必答」把安全约束顶掉
+        system.append(SensitiveGuard.PROMPT_RULES);
 
         Map<String, Object> systemMsg = new LinkedHashMap<>();
         systemMsg.put("role", "system");

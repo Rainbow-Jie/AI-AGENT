@@ -1,6 +1,7 @@
 package com.goocidata.agent.tool;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.goocidata.agent.security.SensitiveGuard;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -75,13 +76,16 @@ public class ToolBox {
             cached = probeEnvironment();
             envCache = cached;
         }
-        return cached + "\n- 工作目录（相对路径的根，优先用相对路径）：" + root;
+        // 刻意不输出工作目录的绝对路径：模型知道「相对路径以工作目录为根」就够用了，
+        // 而绝对路径一旦进了上下文，就可能被用户在闲聊里问出来（真实发生过）。
+        return cached + "\n- 相对路径以工作目录为根；工具的报错信息里不会出现绝对路径，这是正常的";
     }
 
     private String probeEnvironment() {
         StringBuilder sb = new StringBuilder();
-        sb.append("- 操作系统：").append(System.getProperty("os.name"))
-                .append(' ').append(System.getProperty("os.arch")).append('\n');
+        // 只告诉模型「命令在什么 shell 里跑」，这是写对命令的必要信息；
+        // 具体的内核版本、机器架构、主机名一概不探测，免得被问出来
+        sb.append("- 运行平台：").append(isWindows() ? "Windows" : "Linux/Unix").append('\n');
         if (isWindows()) {
             sb.append("- 命令执行环境：Windows cmd.exe，**不是** bash / PowerShell\n");
             sb.append("- 命令语法对照（务必遵守）：\n")
@@ -163,6 +167,11 @@ public class ToolBox {
 
     /**
      * 执行工具。所有异常都转成可读结果回给模型，不抛出中断对话。
+     * <p>
+     * 注意：返回的文本会同时流向两个地方——回灌给模型继续推理，
+     * 以及推给前端显示在工具卡片里。所以这里必须脱敏：
+     * 绝对路径一律抹掉，权限/沙箱拒绝统一换成中性文案，
+     * 否则「没有权限」「拒绝访问 /data/xxx」会被用户直接看到。
      */
     public ToolResult execute(String name, String argsJson, ToolContext ctx) {
         long t0 = System.currentTimeMillis();
@@ -170,8 +179,8 @@ public class ToolBox {
             int required = REQUIRED_MODE.getOrDefault(name, 99);
             int current = levelOf(ctx.getMode());
             if (required > current) {
-                throw new ToolException("当前智能体权限不足，无法使用【" + name + "】。"
-                        + "当前权限：" + modeDesc(ctx.getMode()) + "，需要：" + modeDesc(levelToMode(required)));
+                // 不说明缺什么权限、也不说当前是什么档位：差异信息会让人反推出策略
+                throw new ToolException(SensitiveGuard.TOOL_DENIED);
             }
             Map<String, Object> args = parseArgs(argsJson);
             String out;
@@ -203,13 +212,15 @@ public class ToolBox {
                 default:
                     throw new ToolException("未知工具：" + name);
             }
-            return ToolResult.ok(dedup(name, argsJson, out, ctx), System.currentTimeMillis() - t0);
+            return ToolResult.ok(SensitiveGuard.scrubToolOutput(dedup(name, argsJson, out, ctx)),
+                    System.currentTimeMillis() - t0);
         } catch (ToolException e) {
-            return ToolResult.fail(e.getMessage(), System.currentTimeMillis() - t0);
+            return ToolResult.fail(SensitiveGuard.scrubToolOutput(e.getMessage()),
+                    System.currentTimeMillis() - t0);
         } catch (Exception e) {
+            // 异常原文里带绝对路径（如 FileNotFoundException: /data/...），只留在日志
             log.warn("工具执行异常 {}: {}", name, e.getMessage());
-            return ToolResult.fail("执行失败：" + (e.getMessage() == null
-                    ? e.getClass().getSimpleName() : e.getMessage()), System.currentTimeMillis() - t0);
+            return ToolResult.fail("执行失败，请换一种方式重试。", System.currentTimeMillis() - t0);
         }
     }
 

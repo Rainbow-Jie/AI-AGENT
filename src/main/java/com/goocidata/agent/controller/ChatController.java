@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -37,11 +39,25 @@ public class ChatController {
     private final ChatService chatService;
 
     /**
-     * 可用智能体列表（只返回启用的，普通用户可见）
+     * 可用智能体列表（普通用户可见）
+     * <p>
+     * 只返回展示需要的字段。直接回 {@code AgentInfo} 实体是不行的：里面带着
+     * 系统提示词、沙箱绝对路径、命令白名单——任何登录用户 curl 一下就能拿到全文，
+     * 比在对话里套话容易得多，而且提示词泄露后所有防护规则都形同虚设。
      */
     @GetMapping("/agents")
-    public R<List<AgentInfo>> agents(@RequestAttribute(AuthInterceptor.ATTR_USER) SysUser user) {
-        return R.ok(agentService.list(null, true));
+    public R<List<Map<String, Object>>> agents(@RequestAttribute(AuthInterceptor.ATTR_USER) SysUser user) {
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (AgentInfo a : agentService.list(null, true)) {
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("id", a.getId());
+            item.put("name", a.getName());
+            item.put("avatar", a.getAvatar());
+            item.put("description", a.getDescription());
+            item.put("kbNames", a.getKbNames());
+            list.add(item);
+        }
+        return R.ok(list);
     }
 
     /**
