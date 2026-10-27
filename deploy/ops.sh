@@ -43,6 +43,8 @@ MAVEN_HEAP="-Xmx400m -XX:MaxMetaspaceSize=256m"
 LOG_FILE="$APP_DIR/logs/ops.log"
 BUILD_LOG="$APP_DIR/logs/build.log"
 KEEP_JARS=5          # backup/jar 下最多保留几个历史包
+DEPLOYED_FILE="$APP_DIR/.deployed"   # 记录线上跑的是哪个 commit / 哪个包
+SERVICE_STOPPED_BY_US=0   # 停服后置 1，用于中断保护
 START_TS=""          # 本次操作起始时间，用于筛日志
 
 # ============================ 输出 ============================
@@ -66,6 +68,26 @@ step() { log ""; log "${C_BLU}== $* ==${C_RST}"; }
 dim()  { log "    ${C_DIM}$*${C_RST}"; }
 
 die() { err "$*"; exit 1; }
+
+# 中断保护：部署过程中如果被 Ctrl-C、SSH 断线、或输出管道被关闭（SIGPIPE）杀掉，
+# 服务会停在「已停止」状态，这里负责把它拉起来，避免线上空着。
+on_abort() {
+    local rc=$?
+    [ "$SERVICE_STOPPED_BY_US" = "1" ] || return 0
+    SERVICE_STOPPED_BY_US=0
+    # 此时 stdout 可能已被管道关闭，提示只写 stderr 与日志文件
+    printf '\n[ops] 部署被中断（退出码 %s），正在恢复服务…\n' "$rc" >&2 2>/dev/null
+    printf '[%s] 部署被中断（退出码 %s），已尝试恢复服务\n' "$(date '+%F %T')" "$rc" >>"$LOG_FILE" 2>/dev/null
+    systemctl start "$SERVICE" >/dev/null 2>&1
+    sleep 3
+    if svc_active; then
+        printf '[ops] 服务已恢复运行（版本未变更）\n' >&2 2>/dev/null
+        printf '[%s] 服务已恢复运行\n' "$(date '+%F %T')" >>"$LOG_FILE" 2>/dev/null
+    else
+        printf '[ops] 恢复失败！请手动执行：systemctl start %s\n' "$SERVICE" >&2 2>/dev/null
+    fi
+}
+trap on_abort EXIT INT TERM HUP
 
 # ============================ 工具函数 ============================
 need_root() {
@@ -113,6 +135,31 @@ git_commit() {
 
 git_subject() {
     run_git log -1 --format='%ad %s' --date=short 2>/dev/null | head -1 || echo ""
+}
+
+# 线上实际运行的版本（不能直接拿源码 HEAD，否则「只拉了代码没部署」会被误判成无变化）
+deployed_commit() {
+    [ -f "$DEPLOYED_FILE" ] && awk '{print $1}' "$DEPLOYED_FILE" 2>/dev/null || echo "unknown"
+}
+
+record_deployed() {
+    printf '%s %s %s\n' "${1:-$(git_commit)}" "$(jar_md5 "$JAR")" "$(date '+%F %T')" >"$DEPLOYED_FILE" 2>/dev/null && \
+        chown agenthub:agenthub "$DEPLOYED_FILE" 2>/dev/null
+}
+
+# 从 backup/jar 归档名反查某个包对应的 commit
+commit_by_md5() {
+    local want="$1" f
+    for f in "$APP_DIR"/backup/jar/*.jar; do
+        [ -f "$f" ] || continue
+        if [ "$(jar_md5 "$f")" = "$want" ]; then
+            local b
+            b=$(basename "$f" .jar)
+            echo "${b##*-}"
+            return
+        fi
+    done
+    echo "unknown"
 }
 
 # 从 env 文件读公网地址（可选，仅用于展示）
@@ -386,6 +433,7 @@ do_rollback() {
     systemctl restart "$SERVICE"
     START_TS=$(date '+%Y-%m-%d %H:%M:%S')
     if health_check; then
+        record_deployed "$(commit_by_md5 "$(jar_md5 "$JAR")")"
         ok "回滚成功，当前运行 $(jar_md5 "$JAR")（再执行一次可切回 $cur）"
     else
         die "回滚后健康检查仍有问题，请查看：journalctl -u $SERVICE -n 100"
@@ -398,7 +446,7 @@ do_deploy() {
     preflight
     START_TS=$(date '+%Y-%m-%d %H:%M:%S')
     local old_commit new_commit was_running=0
-    old_commit=$(git_commit)
+    old_commit=$(deployed_commit)
 
     log ""
     log "${C_BLU}┌─────────────────────────────────────────────┐${C_RST}"
@@ -427,7 +475,10 @@ do_deploy() {
         step "停止服务（编译期间释放约 $(svc_rss) MB）"
         systemctl stop "$SERVICE"
         sleep 1
-        svc_active && die "服务停止失败，已中止部署（线上未受影响）"
+        if svc_active; then
+            die "服务停止失败，已中止部署（线上未受影响）"
+        fi
+        SERVICE_STOPPED_BY_US=1
         ok "服务已停止"
     fi
 
@@ -435,6 +486,7 @@ do_deploy() {
         err "编译失败，正在恢复原服务"
         if [ $was_running -eq 1 ]; then
             systemctl start "$SERVICE"
+            SERVICE_STOPPED_BY_US=0
             sleep 3
             svc_active && warn "原版本已恢复运行（未做任何变更）"
         fi
@@ -444,9 +496,11 @@ do_deploy() {
     install_jar
     step "启动服务"
     systemctl start "$SERVICE"
+    SERVICE_STOPPED_BY_US=0
     ok "systemctl start 已下发"
 
     if health_check; then
+        record_deployed "$new_commit"
         log ""
         log "${C_GRN}╭─────────────────────────────────────────────╮${C_RST}"
         log "${C_GRN}│  部署成功                                   │${C_RST}"
@@ -491,7 +545,8 @@ do_status() {
     if port_listening; then plisten="已监听"; else plisten="未监听"; fi
     log "    本机响应   HTTP ${code}    端口 ${PORT} ${plisten}"
     log "    进程       pid ${pid:--}  运行 ${etime}  内存 $(svc_rss) MB"
-    log "    代码版本   $(git_commit)  $(git_subject)"
+    log "    代码版本   线上 $(deployed_commit)（源码 $(git_commit)）"
+    log "              $(git_subject)"
     log "    线上包     $(du -h "$JAR" 2>/dev/null | cut -f1)  md5 $(jar_md5 "$JAR")  修改 $(date -r "$JAR" '+%F %T' 2>/dev/null)"
     log "    回滚包     $(du -h "$PREV_JAR" 2>/dev/null | cut -f1)  md5 $(jar_md5 "$PREV_JAR")"
     if [ -f "$APP_DIR/data/agent-hub.db" ]; then
