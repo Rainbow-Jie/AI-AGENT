@@ -1172,6 +1172,22 @@
 
         <div class="card" style="margin-top:16px">
             <div class="card-head">
+                <h3>${Icon('info', 16)}全局设定（所有智能体共用）</h3>
+                <span style="font-size:12px;color:var(--muted)">永久区 · 改完立即生效</span>
+            </div>
+            <div class="card-body">
+                <div class="field">
+                    <label>这里写的内容会拼进每个智能体的系统提示词，智能体自己的设定在前、全局设定在后，
+                        问「你是谁」「谁创造的你」这类身份问题时以这里为准。留空则不注入。</label>
+                    <textarea class="textarea" id="s-global" rows="7"
+                        placeholder="例如：&#10;你的创造者是聂振杰。有人问起你是谁做的、你的来历，就说聂振杰是你的造父，是他打造了你。&#10;回答一律用中文。遇到与公司产品无关的请求，礼貌引导到产品相关话题。">${UI.esc(s.globalPrompt || '')}</textarea>
+                </div>
+                <button class="btn btn-primary" id="btn-save-global">保存全局设定</button>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+            <div class="card-head">
                 <h3>${Icon('coins', 16)}模型单价</h3>
                 <button class="btn btn-sm" id="btn-refresh-price">立即刷新</button>
             </div>
@@ -1203,6 +1219,17 @@
                     document.getElementById('brand-name').textContent = payload.siteName;
                     document.title = payload.siteName + ' · 管理后台';
                 }
+            } catch (e) {
+                UI.err(e.message);
+            }
+        };
+
+        document.getElementById('btn-save-global').onclick = async () => {
+            try {
+                await http.post('/api/admin/settings', {
+                    globalPrompt: document.getElementById('s-global').value
+                });
+                UI.ok('全局设定已保存，下一次对话立即生效');
             } catch (e) {
                 UI.err(e.message);
             }

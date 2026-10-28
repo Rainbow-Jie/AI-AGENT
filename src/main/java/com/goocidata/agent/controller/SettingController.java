@@ -31,6 +31,7 @@ public class SettingController {
         data.put("siteName", "Agent Hub 智能体平台");
         data.put("siteDesc", "接入 DeepSeek，让知识库会说话");
         data.put("footerText", "");
+        data.put("globalPrompt", "");
         for (Map<String, Object> row : settingMapper.listAll()) {
             Object k = row.get("k");
             Object v = row.get("v");

@@ -12,6 +12,7 @@ import com.goocidata.agent.entity.SysUser;
 import com.goocidata.agent.mapper.ChatMessageMapper;
 import com.goocidata.agent.mapper.ChatSessionMapper;
 import com.goocidata.agent.mapper.LlmConfigMapper;
+import com.goocidata.agent.mapper.SysSettingMapper;
 import com.goocidata.agent.security.SensitiveGuard;
 import com.goocidata.agent.tool.ToolBox;
 import com.goocidata.agent.tool.ToolCall;
@@ -53,6 +54,7 @@ public class ChatService {
     private final LlmConfigMapper llmConfigMapper;
     private final ChatSessionMapper sessionMapper;
     private final ChatMessageMapper messageMapper;
+    private final SysSettingMapper settingMapper;
     private final ToolBox toolBox;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -697,6 +699,17 @@ public class ChatService {
             system.append("你是一个专业、严谨的智能助手，请用简洁清晰的中文回答用户问题。");
         } else {
             system.append(basePrompt.trim());
+        }
+
+        // 全局设定（系统设置里的「永久区」）：管理员写一次，所有智能体共用。
+        // 位置有讲究：放在智能体自身设定之后——模型对靠后指令的服从度更高，
+        // 问「你是谁」「谁创造的你」这类身份问题时以这里为准；
+        // 但仍在安全规则之前——安全规则永远压轴、最高优先级。
+        // 内容不变时 system 前缀不变，模型侧的上下文缓存不会失效。
+        String globalPrompt = settingMapper.get("globalPrompt");
+        if (globalPrompt != null && !globalPrompt.trim().isEmpty()) {
+            system.append("\n\n【全局设定】（对所有智能体生效，与前面的内容冲突时以这里为准）\n")
+                    .append(globalPrompt.trim());
         }
 
         // 注意：system 里只放「对同一智能体永远不变」的内容。
